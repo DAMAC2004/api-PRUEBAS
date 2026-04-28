@@ -32,7 +32,7 @@ class LoginRequest(BaseModel):
         ...,
         min_length=6,
         description="Contraseña en texto plano. Se compara contra el hash bcrypt en BD.",
-        examples=["mi_password_segura"],
+        examples=["Test1234"],
     )
 
 
