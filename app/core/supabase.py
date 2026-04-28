@@ -22,6 +22,7 @@ def _headers() -> dict:
         "apikey": settings.SUPABASE_SERVICE_KEY,
         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",
         "Content-Type": "application/json",
+        "Prefer": "return=representation",
     }
 
 
