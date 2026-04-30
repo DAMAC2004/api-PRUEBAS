@@ -1,8 +1,13 @@
 # =============================================================================
 # app/routers/alumno.py
-# Endpoints exclusivos para usuarios tipo 'alumno'.
+# Endpoints exclusivos para usuarios tipo 'alumno' — Fase A
+#
+# Cambios respecto a v1:
+#   - response_model actualizado a DashboardAlumnoResponse (Fase A).
+#   - Descripción del endpoint actualizada para reflejar los nuevos campos.
 # =============================================================================
 from fastapi import APIRouter, Depends
+
 from app.core.deps import require_alumno
 from app.schemas.schemas import DashboardAlumnoResponse, ErrorResponse
 from app.services import dashboard_service
@@ -25,13 +30,16 @@ en una sola llamada, minimizando los round-trips del frontend.
 **Requiere:** `Authorization: Bearer <token>` (obtenido en `/auth/login`).
 
 **Incluye:**
-- Saludo personalizado (`saludo`).
-- Lista de cursos pendientes con porcentaje de avance.
-- Lista de exámenes pendientes con intentos disponibles.
-- Métricas de gamificación: racha de días, promedio, estadísticas.
+- `saludo` — texto personalizado listo para mostrar.
+- `metricas` — KPIs: racha, promedio, tasa de aprobación, totales de capacitaciones y exámenes.
+- `intento_en_progreso` — si el alumno dejó un examen sin terminar, el frontend
+  muestra el modal 'Retomar examen'. Es `null` si no hay ninguno activo.
+- `capacitaciones` — cursos inscritos o en progreso con porcentaje de avance.
+- `examenes_pendientes` — exámenes que el alumno puede presentar o reintentar.
+- `contenidos_recientes` — siempre `[]` en Fase A (se puebla en Fase C).
 
-**Nota:** Solo devuelve cursos en estado `inscrito` o `en_progreso`.
-Los cursos `completados` o `abandonados` no aparecen en esta vista.
+**Nota:** solo aparecen capacitaciones con estado `inscrito` o `en_progreso`.
+Los cursos `completados` o `abandonados` no están en esta vista.
 """,
 )
 async def dashboard(usuario: dict = Depends(require_alumno)) -> DashboardAlumnoResponse:
