@@ -568,3 +568,204 @@ class IntentoEnProgresoDetalleResponse(BaseModel):
     progreso_guardado: Optional[dict] = Field(
         None, description="Último autosave: {respuestas: {...}, marcadas: [...]}."
     )
+
+
+# =============================================================================
+# FASE C — CAPACITACIONES Y CONTENIDOS
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Sub-schemas compartidos
+# ---------------------------------------------------------------------------
+
+class CatedraticoDashboardSchema(BaseModel):
+    """
+    Resumen de un catedrático asignado a una capacitación.
+    En Fases A y B se devolvía como [] — aquí se puebla desde
+    catedratico_capacitacion JOIN usuarios JOIN catedratico_detalles.
+    """
+    usuario_id: str
+    usuario_nombre: str
+    usuario_apellidos: Optional[str] = None
+    cade_titulo: Optional[str] = Field(
+        None, description="Ej: 'Dr.', 'Mtro.', 'Ing.'"
+    )
+    cade_especialidad: Optional[str] = None
+    cade_avatar_url: Optional[str] = None
+    caca_rol: str = Field(
+        ..., description="Rol del catedrático en esta capacitación."
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /alumno/capacitaciones — Listado
+# ---------------------------------------------------------------------------
+
+class CapacitacionListadoItemSchema(BaseModel):
+    """
+    Ítem del listado de capacitaciones del alumno.
+
+    `contenidos_vistos` siempre es 0 — la BD no tiene tabla de tracking
+    de vistos. Se incluye en el schema para compatibilidad con el contrato
+    del frontend; se poblará cuando se agregue la tabla contenido_visto.
+
+    `total_examenes` y `examenes_aprobados` se calculan en Python contando
+    sobre capacitacion_examenes e intentos_examen respectivamente.
+    """
+    capaci_id: str
+    capaci_nombre: str
+    capaci_descripcion: Optional[str] = None
+    capaci_disponibilidad: str
+    capaci_fecha_inicio: Optional[str] = None
+    capaci_fecha_fin: Optional[str] = None
+    progreso: float = Field(..., ge=0, le=100)
+    estado_inscripcion: str
+    inscrito_en: Optional[str] = None
+    completado_en: Optional[str] = None
+    total_examenes: int = 0
+    examenes_aprobados: int = 0
+    total_contenidos: int = 0
+    contenidos_vistos: int = Field(
+        default=0,
+        description="Siempre 0 — requiere tabla contenido_visto (pendiente).",
+    )
+    catedraticos: list[CatedraticoDashboardSchema] = Field(default_factory=list)
+
+
+class CapacitacionesListadoResponse(BaseModel):
+    """Respuesta del listado de capacitaciones del alumno."""
+    total: int
+    items: list[CapacitacionListadoItemSchema]
+
+
+# ---------------------------------------------------------------------------
+# GET /alumno/capacitaciones/{capaci_id} — Detalle
+# ---------------------------------------------------------------------------
+
+class ContenidoDetalleCapacitacionSchema(BaseModel):
+    """
+    Contenido dentro del detalle de una capacitación.
+    `caco_unidad` y `caco_orden` vienen de capacitacion_contenidos
+    y permiten al frontend agrupar por unidad y ordenar.
+    `visto` siempre es False — sin tabla de tracking.
+    """
+    conten_id: str
+    conten_nombre: str
+    conten_descripcion: Optional[str] = None
+    conten_tipo: str = Field(..., description="'pdf' | 'guia' | 'video'.")
+    caco_unidad: int = Field(..., description="Número de unidad temática.")
+    caco_orden: int = Field(..., description="Posición dentro de la unidad.")
+    visto: bool = Field(
+        default=False,
+        description="Siempre False — requiere tabla contenido_visto (pendiente).",
+    )
+
+
+class ExamenDetalleCapacitacionSchema(BaseModel):
+    """
+    Examen dentro del detalle de una capacitación.
+    Incluye `caex_unidad` y `caex_orden` para que el frontend los agrupe
+    junto a los contenidos de la misma unidad.
+    """
+    exam_id: str
+    exam_nombre: str
+    exam_dificultad: str
+    exam_tiempo_limite: int
+    exam_intentos_max: int
+    exam_calificacion_minima: float
+    caex_unidad: int
+    caex_orden: int
+    estado_intento: str = Field(
+        ..., description="'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'EXPIRADO'."
+    )
+    mejor_calificacion: Optional[float] = None
+    intentos_realizados: int = 0
+
+
+class CapacitacionDetalleResponse(BaseModel):
+    """
+    Detalle completo de una capacitación para la vista individual.
+    Contiene toda la meta-información más los arrays de contenidos
+    y exámenes con sus campos de unidad y orden para que el frontend
+    pueda agruparlos por unidad temática.
+    """
+    capaci_id: str
+    capaci_nombre: str
+    capaci_descripcion: Optional[str] = None
+    capaci_disponibilidad: str
+    capaci_fecha_inicio: Optional[str] = None
+    capaci_fecha_fin: Optional[str] = None
+    progreso: float
+    estado_inscripcion: str
+    inscrito_en: Optional[str] = None
+    completado_en: Optional[str] = None
+    total_examenes: int
+    examenes_aprobados: int
+    total_contenidos: int
+    contenidos_vistos: int = Field(
+        default=0,
+        description="Siempre 0 — requiere tabla contenido_visto (pendiente).",
+    )
+    catedraticos: list[CatedraticoDashboardSchema] = Field(default_factory=list)
+    contenidos: list[ContenidoDetalleCapacitacionSchema] = Field(default_factory=list)
+    examenes: list[ExamenDetalleCapacitacionSchema] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# GET /alumno/contenidos — Listado de contenidos
+# ---------------------------------------------------------------------------
+
+class ContenidoListadoItemSchema(BaseModel):
+    """
+    Ítem del listado de contenidos filtrado por capacitación.
+    `conten_tamanio_kb` no existe en la BD — se devuelve null siempre.
+    `visto` no se puede calcular sin tabla de tracking — siempre False.
+    """
+    conten_id: str
+    capaci_id: str
+    conten_nombre: str
+    conten_descripcion: Optional[str] = None
+    conten_tipo: str
+    caco_unidad: int
+    caco_orden: int
+    conten_tamanio_kb: Optional[int] = Field(
+        default=None,
+        description="No disponible — columna no existe en la BD actual.",
+    )
+    visto: bool = Field(
+        default=False,
+        description="Siempre False — requiere tabla contenido_visto (pendiente).",
+    )
+
+
+class ContenidosListadoResponse(BaseModel):
+    """Respuesta del listado de contenidos de una capacitación."""
+    capaci_id: str
+    total: int
+    items: list[ContenidoListadoItemSchema]
+
+
+# ---------------------------------------------------------------------------
+# GET /alumno/contenidos/{conten_id}/url — URL de acceso
+# ---------------------------------------------------------------------------
+
+class ContenidoUrlResponse(BaseModel):
+    """
+    URL de acceso al archivo del contenido.
+
+    Lógica de construcción (sin llamadas extra a Storage):
+      1. Si conten_url_publica tiene valor → se devuelve directamente.
+      2. Si es null → se construye como:
+         {SUPABASE_URL}/storage/v1/object/public/contenidos/{conten_s3_key}
+         (el bucket 'contenidos' es público en Supabase Storage).
+
+    `expira_en` es null porque el bucket es público y las URLs no expiran.
+    """
+    conten_id: str
+    conten_nombre: str
+    conten_tipo: str
+    url: str = Field(..., description="URL directa de acceso al archivo.")
+    expira_en: Optional[str] = Field(
+        default=None,
+        description="Null — bucket público, URLs sin expiración.",
+    )
