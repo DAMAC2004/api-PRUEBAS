@@ -12,7 +12,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, alumno
+from app.routers import auth, alumno, examenes, intentos
 
 # ---------------------------------------------------------------------------
 # Metadata de la API (aparece en /docs y /redoc)
@@ -28,6 +28,7 @@ Maneja autenticación JWT y entrega datos al frontend móvil.
 | Módulo | Descripción |
 |--------|-------------|
 | `/auth` | Login y emisión de tokens JWT |
+| `/auth` | Login, logout y rehidratación de sesión (/me) |
 | `/alumno` | Dashboard y datos del estudiante |
 
 ### Cómo autenticarse
@@ -39,7 +40,7 @@ Maneja autenticación JWT y entrega datos al frontend móvil.
    ```
 4. Todos los endpoints protegidos ya funcionarán en esta sesión de Swagger.
 """,
-    version="1.0.0",
+    version="1.2.0",
     contact={
         "name": "Radikal Systems",
         "email": "dev@radikalsystems.com",
@@ -67,6 +68,8 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 app.include_router(auth.router)
 app.include_router(alumno.router)
+app.include_router(examenes.router)
+app.include_router(intentos.router)
 
 
 # ---------------------------------------------------------------------------

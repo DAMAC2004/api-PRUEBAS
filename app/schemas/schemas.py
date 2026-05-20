@@ -304,3 +304,267 @@ class ErrorResponse(BaseModel):
     codigo: Optional[str] = Field(
         None, description="Código interno para manejo programático en el frontend."
     )
+
+
+# =============================================================================
+# FASE B — EXÁMENES Y MOTOR DE INTENTO
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Sub-schemas del exam_json
+# ---------------------------------------------------------------------------
+
+class OpcionSchema(BaseModel):
+    """
+    Una opción de respuesta dentro de una pregunta.
+    `es_correcta` y `explicacion` NO se envían al alumno durante el examen
+    — solo se incluyen en la respuesta de resultados (post fecha_fin).
+    """
+    letra: str = Field(..., description="Identificador de la opción: A, B, C, D.")
+    texto: str = Field(..., description="Texto de la opción.")
+
+
+class OpcionResultadoSchema(BaseModel):
+    """Opción enriquecida con la respuesta correcta y explicación. Solo post fecha_fin."""
+    letra: str
+    texto: str
+    es_correcta: bool
+    explicacion: Optional[str] = None
+
+
+class PreguntaExamenSchema(BaseModel):
+    """
+    Pregunta del examen tal como se entrega al alumno al iniciar.
+    No incluye cuál opción es correcta — eso se guarda en exam_json
+    y solo se revela cuando el examen cierra (inex_fecha_fin).
+    """
+    id_pregunta: str = Field(..., description="UUID de la pregunta. Es la key del autosave.")
+    enunciado: str = Field(..., description="Texto de la pregunta.")
+    tipo_pregunta: str = Field(..., description="'simple' | 'multiple'.")
+    opciones: list[OpcionSchema] = Field(..., description="Opciones sin revelar la correcta.")
+    tiempo_estimado: Optional[int] = Field(
+        None, description="Segundos estimados para resolver esta pregunta."
+    )
+    svg: Optional[str] = Field(None, description="Diagrama SVG adjunto, si existe.")
+
+
+class DistribucionSchema(BaseModel):
+    """Distribución de tipos y dificultades del examen. Se muestra en el detalle pre-inicio."""
+    total_preguntas: int
+    simple: int = 0
+    multiple: int = 0
+    abierta: int = 0
+    basico: int = 0
+    intermedio: int = 0
+    avanzado: int = 0
+
+
+# ---------------------------------------------------------------------------
+# GET /alumno/examenes — Listado
+# ---------------------------------------------------------------------------
+
+class ExamenListadoItemSchema(BaseModel):
+    """
+    Resumen de un examen para el listado agrupado por capacitación.
+    `mejor_calificacion` es null si el alumno no ha completado ningún intento.
+    `exam_tema` se extrae de metadata.fuente_conocimiento.subtemas[0].nombre
+    dentro del exam_json — no es columna de la tabla examenes.
+    """
+    exam_id: str
+    capaci_id: str
+    capaci_nombre: str
+    exam_nombre: str
+    exam_dificultad: str = Field(..., description="'BASICO' | 'INTERMEDIO' | 'AVANZADO'.")
+    exam_tema: Optional[str] = Field(
+        None, description="Subtema principal extraído del exam_json."
+    )
+    exam_tiempo_limite: int = Field(..., description="Minutos disponibles para resolver.")
+    exam_intentos_max: int
+    intentos_realizados: int
+    mejor_calificacion: Optional[float] = Field(
+        None, description="Mayor calificación obtenida en intentos COMPLETADOS. Null si ninguno."
+    )
+    exam_fecha_vencimiento: Optional[str] = None
+    total_preguntas: int = Field(..., description="Desde metadata.distribucion.total_preguntas.")
+    estado_intento: str = Field(
+        ..., description="'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'EXPIRADO'."
+    )
+
+
+class ExamenesListadoResponse(BaseModel):
+    """
+    Respuesta del listado de exámenes.
+    La API devuelve lista plana — el frontend agrupa visualmente
+    por capacitación y por estado (pendientes / terminados).
+    """
+    items: list[ExamenListadoItemSchema]
+    total: int = Field(..., description="Total de ítems en la lista (para paginación futura).")
+
+
+# ---------------------------------------------------------------------------
+# GET /alumno/examenes/{exam_id} — Detalle pre-inicio
+# ---------------------------------------------------------------------------
+
+class ExamenDetalleResponse(BaseModel):
+    """
+    Detalle completo del examen para la pantalla de preparación pre-inicio.
+    Incluye toda la meta-información pero NO revela las preguntas todavía
+    (esas se entregan al hacer POST /iniciar).
+    """
+    exam_id: str
+    capaci_id: str
+    capaci_nombre: str
+    exam_nombre: str
+    exam_dificultad: str
+    exam_tema: Optional[str] = None
+    exam_tiempo_limite: int = Field(..., description="Minutos.")
+    exam_intentos_max: int
+    exam_calificacion_minima: float = Field(
+        ..., description="Calificación mínima para aprobar. Default 70."
+    )
+    intentos_realizados: int
+    intentos_disponibles: int = Field(
+        ..., description="exam_intentos_max - intentos_realizados."
+    )
+    mejor_calificacion: Optional[float] = None
+    exam_fecha_vencimiento: Optional[str] = None
+    total_preguntas: int
+    distribucion: DistribucionSchema
+    estado_intento: str
+
+
+# ---------------------------------------------------------------------------
+# POST /alumno/examenes/{exam_id}/iniciar — Crear o recuperar intento
+# ---------------------------------------------------------------------------
+
+class IniciarIntentoResponse(BaseModel):
+    """
+    Respuesta al iniciar o retomar un examen.
+    Incluye las preguntas completas (sin respuestas correctas) y
+    el progreso guardado en el último autosave si el alumno retoma.
+
+    `es_retoma` indica al frontend si debe restaurar `progreso_guardado`
+    o iniciar con todas las preguntas en blanco.
+    """
+    intento_id: str
+    exam_id: str
+    numero_intento: int
+    es_retoma: bool = Field(
+        ..., description="True si el alumno retoma un intento EN_PROGRESO existente."
+    )
+    fecha_inicio: str
+    tiempo_limite_seg: int = Field(
+        ..., description="Tiempo total del examen en segundos (exam_tiempo_limite * 60)."
+    )
+    tiempo_restante_seg: int = Field(
+        ..., description="Segundos restantes. Si es retoma, calculado desde el último autosave."
+    )
+    preguntas: list[PreguntaExamenSchema] = Field(
+        ..., description="Preguntas sin revelar respuestas correctas."
+    )
+    progreso_guardado: Optional[dict] = Field(
+        None,
+        description=(
+            "Contenido de inex_progreso_json del último autosave. "
+            "Null si es intento nuevo. "
+            "Estructura: {respuestas: {uuid: 'A'}, marcadas: ['uuid']}."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# PATCH /alumno/intentos/{intento_id}/autosave — Heartbeat
+# ---------------------------------------------------------------------------
+
+class AutosaveRequest(BaseModel):
+    """
+    Body del heartbeat de autosave enviado por el frontend cada 30 segundos.
+    Las keys de `respuestas` son los UUID de las preguntas (id_pregunta).
+    `marcadas` es lista de UUIDs de preguntas que el alumno marcó para revisar.
+    El tiempo restante lo calcula la API — no viene en el body.
+    """
+    respuestas: dict[str, str] = Field(
+        ...,
+        description="Mapa id_pregunta → letra de respuesta. Ej: {'a1b2...': 'B'}.",
+        examples=[{"a1b2c3d4-e5f6-7890-abcd-ef1234567801": "A"}],
+    )
+    marcadas: list[str] = Field(
+        default_factory=list,
+        description="UUIDs de preguntas marcadas para revisar después.",
+    )
+
+
+class AutosaveResponse(BaseModel):
+    """Confirmación del autosave. El frontend usa `synced_at` para mostrar el timestamp."""
+    intento_id: str
+    synced_at: str = Field(..., description="ISO timestamp de cuando se guardó.")
+    tiempo_restante_seg: int = Field(
+        ..., description="Segundos restantes calculados por la API."
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /alumno/intentos/{intento_id}/entregar — Entrega final
+# ---------------------------------------------------------------------------
+
+class EntregarRequest(BaseModel):
+    """
+    Body de la entrega final del examen.
+    Mismo contrato que AutosaveRequest — es el último guardado antes de cerrar.
+    La API marca el intento como COMPLETADO pero NO califica todavía.
+    La calificación y feedback solo se disponibilizan cuando inex_fecha_fin
+    supere la fecha actual (el examen cerró para todos los alumnos).
+    """
+    respuestas: dict[str, str] = Field(
+        ..., description="Estado final del examen. Keys = UUID de preguntas."
+    )
+    marcadas: list[str] = Field(
+        default_factory=list,
+        description="Preguntas marcadas al momento de entregar (para registro).",
+    )
+
+
+class EntregarResponse(BaseModel):
+    """
+    Confirmación de entrega. El frontend muestra pantalla de 'Examen entregado'.
+    `resultados_disponibles_en` es cuándo el alumno podrá ver su calificación.
+    """
+    intento_id: str
+    estado: str = Field(default="COMPLETADO", description="Siempre COMPLETADO en respuesta 200.")
+    entregado_en: str = Field(..., description="ISO timestamp de la entrega.")
+    resultados_disponibles_en: Optional[str] = Field(
+        None,
+        description=(
+            "ISO timestamp de inex_fecha_fin del examen. "
+            "Null si el examen no tiene fecha de cierre definida."
+        ),
+    )
+    mensaje: str = Field(
+        default="Tu examen fue entregado correctamente. Los resultados estarán disponibles cuando el período de evaluación cierre.",
+        description="Mensaje amigable para mostrar al alumno.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /alumno/intentos/en_progreso — Modal de retomar
+# ---------------------------------------------------------------------------
+
+class IntentoEnProgresoDetalleResponse(BaseModel):
+    """
+    Detalle completo del intento EN_PROGRESO para el modal 'Retomar examen'.
+    Incluye preguntas y el progreso guardado para que el frontend restaure
+    el estado exacto donde el alumno lo dejó.
+    """
+    intento_id: str
+    exam_id: str
+    exam_nombre: str
+    capaci_id: str
+    capaci_nombre: str
+    numero_intento: int
+    fecha_inicio: str
+    tiempo_limite_seg: int
+    tiempo_restante_seg: int
+    preguntas: list[PreguntaExamenSchema]
+    progreso_guardado: Optional[dict] = Field(
+        None, description="Último autosave: {respuestas: {...}, marcadas: [...]}."
+    )
