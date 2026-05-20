@@ -769,3 +769,182 @@ class ContenidoUrlResponse(BaseModel):
         default=None,
         description="Null — bucket público, URLs sin expiración.",
     )
+
+
+# =============================================================================
+# FASE D — HISTORIAL, MÉTRICAS Y CERTIFICADOS
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# GET /alumno/historial — Listado
+# ---------------------------------------------------------------------------
+
+class HistorialItemSchema(BaseModel):
+    """
+    Ítem del historial de intentos del alumno.
+    Incluye intentos COMPLETADO y EXPIRADO.
+    `calificacion` puede ser null si exam_fecha_vencimiento aún no pasó
+    (los resultados no se revelan antes del cierre del período).
+    """
+    intento_id: str
+    exam_id: str
+    exam_nombre: str
+    exam_dificultad: str
+    capaci_id: Optional[str] = None
+    capaci_nombre: Optional[str] = None
+    inex_estado: str = Field(..., description="'COMPLETADO' | 'EXPIRADO'.")
+    inex_numero_intento: int
+    inex_fecha_inicio: str
+    inex_fecha_fin: Optional[str] = None
+    calificacion: Optional[float] = Field(
+        None,
+        description="Null si exam_fecha_vencimiento aún no llegó.",
+    )
+    aciertos: Optional[int] = None
+    total_preguntas: Optional[int] = None
+    resultados_disponibles: bool = Field(
+        ...,
+        description="True si exam_fecha_vencimiento < ahora. Determina si se muestran resultados.",
+    )
+
+
+class HistorialListadoResponse(BaseModel):
+    """Respuesta del listado de historial de intentos."""
+    total: int
+    items: list[HistorialItemSchema]
+
+
+# ---------------------------------------------------------------------------
+# GET /alumno/historial/{intento_id} — Detalle
+# ---------------------------------------------------------------------------
+
+class RespuestaFeedbackSchema(BaseModel):
+    """
+    Feedback por pregunta una vez que el período de evaluación cerró.
+    Incluye la respuesta del alumno, la correcta y la explicación del exam_json.
+    """
+    id_pregunta: str
+    enunciado: str
+    tipo_pregunta: str
+    respuesta_alumno: Optional[str] = Field(
+        None, description="Letra que eligió el alumno. Null si no respondió."
+    )
+    respuesta_correcta: str = Field(..., description="Letra de la opción correcta.")
+    es_correcto: bool
+    explicacion: Optional[str] = Field(
+        None, description="Explicación de la respuesta correcta del exam_json."
+    )
+    opciones: list[OpcionResultadoSchema] = Field(
+        default_factory=list,
+        description="Todas las opciones con es_correcta y explicacion reveladas.",
+    )
+
+
+class HistorialDetalleResponse(BaseModel):
+    """
+    Detalle completo de un intento pasado.
+
+    Si `resultados_disponibles` es False (exam_fecha_vencimiento aún no llegó):
+      - `calificacion`, `aciertos`, `total_preguntas` son null.
+      - `feedback` es lista vacía.
+      - El frontend muestra: 'Resultados disponibles el {resultados_disponibles_en}'.
+
+    Si `resultados_disponibles` es True:
+      - Se calculan calificación y aciertos (desde BD si existen, o desde
+        inex_progreso_json vs exam_json en tiempo real).
+      - `feedback` contiene una entrada por pregunta con respuesta correcta
+        y explicación extraída del exam_json.
+    """
+    intento_id: str
+    exam_id: str
+    exam_nombre: str
+    exam_dificultad: str
+    exam_calificacion_minima: float
+    capaci_id: Optional[str] = None
+    capaci_nombre: Optional[str] = None
+    inex_estado: str
+    inex_numero_intento: int
+    inex_fecha_inicio: str
+    inex_fecha_fin: Optional[str] = None
+    resultados_disponibles: bool
+    resultados_disponibles_en: Optional[str] = Field(
+        None,
+        description="ISO timestamp de exam_fecha_vencimiento. Null si el examen no tiene fecha de cierre.",
+    )
+    calificacion: Optional[float] = None
+    aciertos: Optional[int] = None
+    total_preguntas: Optional[int] = None
+    aprobado: Optional[bool] = Field(
+        None,
+        description="True si calificacion >= exam_calificacion_minima. Null si resultados no disponibles.",
+    )
+    feedback: list[RespuestaFeedbackSchema] = Field(
+        default_factory=list,
+        description="Feedback por pregunta. Lista vacía si resultados_disponibles es False.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /alumno/metricas — Métricas con evolución
+# ---------------------------------------------------------------------------
+
+class EvolucionPuntoSchema(BaseModel):
+    """
+    Punto de la curva de evolución del promedio mensual.
+    Se calcula en Python agrupando intentos COMPLETADO por mes
+    (últimos 6 meses). Meses sin intentos se omiten.
+    """
+    periodo: str = Field(..., description="Formato YYYY-MM. Ej: '2026-03'.")
+    promedio: float = Field(..., description="Promedio de calificaciones de ese mes.")
+    examenes_presentados: int = Field(..., description="Intentos COMPLETADO en ese mes.")
+
+
+class MetricasDetalleResponse(BaseModel):
+    """
+    Métricas completas del alumno para la pantalla de estadísticas.
+    Extiende el objeto `metricas` del dashboard con la evolución mensual.
+    `evolucion_promedio` contiene hasta 6 puntos (últimos 6 meses con actividad).
+    Lista vacía si el alumno no tiene intentos COMPLETADO con calificación.
+    """
+    promedio_actual: float
+    racha_dias: int
+    ultima_actividad: Optional[str] = None
+    capacitaciones_completadas: int
+    capacitaciones_total: int
+    examenes_aprobados: int
+    examenes_total: int
+    tasa_aprobacion: float
+    evolucion_promedio: list[EvolucionPuntoSchema] = Field(
+        default_factory=list,
+        description="Últimos 6 meses con al menos un intento COMPLETADO calificado.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /alumno/certificados — Listado
+# ---------------------------------------------------------------------------
+
+class CertificadoItemSchema(BaseModel):
+    """
+    Ítem del listado de certificados del alumno.
+    La capacitación se obtiene navegando:
+    exam_id → capacitacion_examenes → capaci_id → capacitaciones.
+    `cert_pdf_url` y `cert_qr_url` pueden ser null si aún no se generaron.
+    Los catedráticos firmantes NO se incluyen en el listado — solo en el
+    detalle individual (fuera del scope de Fase D).
+    """
+    cert_id: str
+    cert_folio: str
+    exam_id: str
+    exam_nombre: str
+    capaci_id: Optional[str] = None
+    capaci_nombre: Optional[str] = None
+    cert_emitido_en: str
+    cert_pdf_url: Optional[str] = None
+    cert_qr_url: Optional[str] = None
+
+
+class CertificadosListadoResponse(BaseModel):
+    """Respuesta del listado de certificados del alumno."""
+    total: int
+    items: list[CertificadoItemSchema]
