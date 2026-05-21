@@ -948,3 +948,53 @@ class CertificadosListadoResponse(BaseModel):
     """Respuesta del listado de certificados del alumno."""
     total: int
     items: list[CertificadoItemSchema]
+
+
+# =============================================================================
+# FASE E — PERFIL
+# =============================================================================
+
+class PerfilResponse(BaseModel):
+    """
+    Perfil completo del alumno autenticado.
+    Ensambla datos de `usuarios` y `usuario_detalles`.
+    `usde_avatar_url` es null si el alumno no ha subido foto.
+    `usde_descripcion` es null si no ha escrito una bio.
+    """
+    usuario_id: str
+    usuario_nombre: str
+    usuario_apellidos: Optional[str] = None
+    usuario_correo: str
+    usuario_idioma: str
+    usuario_modo_oscuro: bool
+    usde_username: Optional[str] = None
+    usde_descripcion: Optional[str] = None
+    usde_avatar_url: Optional[str] = Field(
+        None,
+        description="URL del avatar. El frontend sube la imagen directo a Supabase Storage y envía la URL aquí.",
+    )
+
+
+class PerfilUpdateRequest(BaseModel):
+    """
+    Campos editables del perfil del alumno.
+    Todos son opcionales — solo se actualizan los que vienen en el body.
+
+    Campos NO editables vía esta API (datos institucionales):
+        usuario_nombre, usuario_apellidos, usuario_correo.
+
+    `avatar_url`: el frontend sube el archivo directo a Supabase Storage
+    y envía la URL resultante aquí. La API la guarda en usde_avatar_url.
+    """
+    usuario_idioma: Optional[str] = Field(
+        None, description="Código de idioma. Ej: 'es', 'en'."
+    )
+    usuario_modo_oscuro: Optional[bool] = Field(
+        None, description="Preferencia de tema oscuro."
+    )
+    usde_descripcion: Optional[str] = Field(
+        None, description="Bio o descripción del perfil."
+    )
+    avatar_url: Optional[str] = Field(
+        None, description="URL del avatar tras subirlo a Supabase Storage."
+    )
