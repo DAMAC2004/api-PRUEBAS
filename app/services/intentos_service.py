@@ -33,23 +33,16 @@ def _iso(dt: datetime) -> str:
 
 
 def _parsear_preguntas(exam_json: dict) -> list[PreguntaExamenSchema]:
-    """
-    Convierte el array 'preguntas' del exam_json en una lista de
-    PreguntaExamenSchema para enviar al alumno.
-
-    IMPORTANTE: no incluye `es_correcta` ni `explicacion` —
-    esos campos solo se revelan post fecha_fin del examen.
-    """
     preguntas_raw = exam_json.get("preguntas", [])
     resultado = []
     for p in preguntas_raw:
         opciones = [
-            OpcionSchema(letra=o["letra"], texto=o["texto"])
+            OpcionSchema(letra=o["id"], texto=o["texto"])   # "letra" → "id"
             for o in p.get("opciones", [])
         ]
         resultado.append(
             PreguntaExamenSchema(
-                id_pregunta=p["id_pregunta"],
+                id_pregunta=p["id"],                         # "id_pregunta" → "id"
                 enunciado=p["enunciado"],
                 tipo_pregunta=p.get("tipo_pregunta", "simple"),
                 opciones=opciones,
