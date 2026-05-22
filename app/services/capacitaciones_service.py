@@ -45,38 +45,36 @@ def _mejor_calificacion(intentos: list[dict]) -> float | None:
 
 
 async def _get_catedraticos(capaci_id: str) -> list[CatedraticoDashboardSchema]:
-    """
-    Obtiene los catedráticos asignados a una capacitación.
-    Consulta catedratico_capacitacion + usuarios + catedratico_detalles.
-    """
     asignaciones = await supabase_get(
         "catedratico_capacitacion",
-        f"select=usuario_id,caca_rol,"
-        f"usuarios(usuario_nombre,usuario_apellidos),"
-        f"catedratico_detalles(cade_titulo,cade_especialidad,cade_avatar_url)"
+        f"select=usuario_id,caca_rol,usuarios(usuario_nombre,usuario_apellidos)"
         f"&capaci_id=eq.{capaci_id}",
     )
+    if not asignaciones:
+        return []
+
+    usuario_ids = [a["usuario_id"] for a in asignaciones]
+    detalles_raw = await supabase_get(
+        "catedratico_detalles",
+        f"select=usuario_id,cade_titulo,cade_especialidad,cade_avatar_url"
+        f"&usuario_id=in.({','.join(usuario_ids)})",
+    )
+    detalles_por_usuario = {d["usuario_id"]: d for d in detalles_raw}
 
     result = []
     for a in asignaciones:
         u = a.get("usuarios") or {}
-        d = a.get("catedratico_detalles") or {}
-        # catedratico_detalles puede venir como lista en PostgREST
-        if isinstance(d, list):
-            d = d[0] if d else {}
-        result.append(
-            CatedraticoDashboardSchema(
-                usuario_id=a["usuario_id"],
-                usuario_nombre=u.get("usuario_nombre", ""),
-                usuario_apellidos=u.get("usuario_apellidos"),
-                cade_titulo=d.get("cade_titulo"),
-                cade_especialidad=d.get("cade_especialidad"),
-                cade_avatar_url=d.get("cade_avatar_url"),
-                caca_rol=a.get("caca_rol", "catedratico"),
-            )
-        )
+        d = detalles_por_usuario.get(a["usuario_id"], {})
+        result.append(CatedraticoDashboardSchema(
+            usuario_id=a["usuario_id"],
+            usuario_nombre=u.get("usuario_nombre", ""),
+            usuario_apellidos=u.get("usuario_apellidos"),
+            cade_titulo=d.get("cade_titulo"),
+            cade_especialidad=d.get("cade_especialidad"),
+            cade_avatar_url=d.get("cade_avatar_url"),
+            caca_rol=a.get("caca_rol", "catedratico"),
+        ))
     return result
-
 
 # =============================================================================
 # listar_capacitaciones()
@@ -174,17 +172,25 @@ async def listar_capacitaciones(
     catedraticos_raw = await supabase_get(
         "catedratico_capacitacion",
         f"select=capaci_id,usuario_id,caca_rol,"
-        f"usuarios(usuario_nombre,usuario_apellidos),"
-        f"catedratico_detalles(cade_titulo,cade_especialidad,cade_avatar_url)"
+        f"usuarios(usuario_nombre,usuario_apellidos)"
         f"&capaci_id=in.({ids_str})",
     )
+
+    # Segunda query para detalles
+    cat_usuario_ids = list({a["usuario_id"] for a in catedraticos_raw})
+    detalles_raw = []
+    if cat_usuario_ids:
+        detalles_raw = await supabase_get(
+            "catedratico_detalles",
+            f"select=usuario_id,cade_titulo,cade_especialidad,cade_avatar_url"
+            f"&usuario_id=in.({','.join(cat_usuario_ids)})",
+        )
+    detalles_por_usuario = {d["usuario_id"]: d for d in detalles_raw}
 
     catedraticos_por_capaci: dict[str, list[CatedraticoDashboardSchema]] = {}
     for a in catedraticos_raw:
         u = a.get("usuarios") or {}
-        d = a.get("catedratico_detalles") or {}
-        if isinstance(d, list):
-            d = d[0] if d else {}
+        d = detalles_por_usuario.get(a["usuario_id"], {})
         schema = CatedraticoDashboardSchema(
             usuario_id=a["usuario_id"],
             usuario_nombre=u.get("usuario_nombre", ""),
