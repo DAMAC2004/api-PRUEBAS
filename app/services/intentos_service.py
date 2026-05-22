@@ -506,6 +506,8 @@ async def obtener_intento_en_progreso(
         return None
 
     ia = intentos[0]
+    exam_data = ia.get("examenes") or {}  # ← esta línea falta
+    exam_json = exam_data.get("exam_json") or {}
     exam_id = ia.get("exam_id")
 
     # Segunda query para obtener capaci_id
