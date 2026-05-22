@@ -497,7 +497,7 @@ async def obtener_intento_en_progreso(
         f"select=intento_id,exam_id,inex_estado,inex_numero_intento,"
         f"inex_fecha_inicio,inex_progreso_json,"
         f"examenes(exam_nombre,exam_tiempo_limite,exam_json),"
-        f"capacitacion_examenes(capaci_id,"
+        f"capacitacion_examenes!left(capaci_id,"
         f"capacitaciones(capaci_nombre))"
         f"&usuario_id=eq.{usuario_id}"
         f"&inex_estado=eq.EN_PROGRESO"

@@ -131,8 +131,7 @@ async def obtener_metricas(usuario_id: str) -> MetricasDetalleResponse:
         "intentos_examen",
         f"select=inex_estado,inex_calificacion,inex_fecha_fin"
         f"&usuario_id=eq.{usuario_id}"
-        f"&inex_estado=eq.COMPLETADO"
-        f"&inex_fecha_fin=gte.{limite_iso}",
+        f"&inex_estado=eq.COMPLETADO",
     )
 
     evolucion = _calcular_evolucion(intentos_raw)
