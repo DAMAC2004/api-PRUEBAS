@@ -496,9 +496,7 @@ async def obtener_intento_en_progreso(
         "intentos_examen",
         f"select=intento_id,exam_id,inex_estado,inex_numero_intento,"
         f"inex_fecha_inicio,inex_progreso_json,"
-        f"examenes(exam_nombre,exam_tiempo_limite,exam_json),"
-        f"capacitacion_examenes!left(capaci_id,"
-        f"capacitaciones(capaci_nombre))"
+        f"examenes(exam_nombre,exam_tiempo_limite,exam_json)"
         f"&usuario_id=eq.{usuario_id}"
         f"&inex_estado=eq.EN_PROGRESO"
         f"&limit=1",
@@ -508,13 +506,14 @@ async def obtener_intento_en_progreso(
         return None
 
     ia = intentos[0]
-    exam_data = ia.get("examenes") or {}
-    exam_json = exam_data.get("exam_json") or {}
+    exam_id = ia.get("exam_id")
 
-    # Navegar el JOIN anidado para capaci_id y capaci_nombre
-    cap_exam = ia.get("capacitacion_examenes") or {}
-    if isinstance(cap_exam, list):
-        cap_exam = cap_exam[0] if cap_exam else {}
+    # Segunda query para obtener capaci_id
+    cap_exam_rows = await supabase_get(
+        "capacitacion_examenes",
+        f"select=capaci_id,capacitaciones(capaci_nombre)&exam_id=eq.{exam_id}&limit=1",
+    )
+    cap_exam = cap_exam_rows[0] if cap_exam_rows else {}
     capaci_data = cap_exam.get("capacitaciones") or {}
 
     tiempo_limite_min = exam_data.get("exam_tiempo_limite", 60)
